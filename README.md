@@ -1,162 +1,93 @@
-# 🚀 Nexus AI: Orkes AI Full-Stack Tingkat Lanjut
+# 🚀 Nexus AI: Rohadi Edition
+### Asisten AI Strategis dengan Framework TGM & Memori Terpusat
 
-Nexus AI adalah platform orkestrasi AI yang kuat dan lengkap, dirancang untuk percakapan tingkat lanjut, riset otonom, dan perencanaan tugas. Proyek ini menggabungkan backend FastAPI berkinerja tinggi dengan frontend Next.js modern, dilengkapi dengan memori episodik, pemanggilan alat (tool calling), dan sistem fallback model yang cerdas.
+Nexus AI adalah platform orkestrasi AI tingkat lanjut yang ditenagai oleh **Rohadi**, asisten AI pribadi yang dirancang untuk membantu dalam strategi bisnis, coding, dan riset mendalam. Proyek ini menggabungkan backend FastAPI dengan frontend Next.js modern, dilengkapi dengan **Total Growth Marketing (TGM)** framework dan memori episodik terpusat.
 
-![Nexus AI Architecture](https://img.shields.io/badge/Arsitektur-Fullstack-blue)
-![Backend](https://img.shields.io/badge/Backend-FastAPI-green)
-![Frontend](https://img.shields.io/badge/Frontend-Next.js-black)
-![Database](https://img.shields.io/badge/Database-PostgreSQL-blue)
+![Nexus AI](https://img.shields.io/badge/Identity-Rohadi-orange)
+![Framework](https://img.shields.io/badge/Strategy-TGM-blue)
+![Memory](https://img.shields.io/badge/Memory-Mira%20Central-purple)
+![Provider](https://img.shields.io/badge/Provider-OpenRouter-black)
 
 ---
 
-## ✨ Fitur Utama
+## ✨ Fitur Unggulan
 
-- **💬 UI Chat Canggih**: Respons streaming real-time dengan antarmuka yang dioptimalkan untuk mode gelap menggunakan `assistant-ui`.
-- **🔍 Riset Otonom**: Alat terintegrasi untuk pencarian web real-time (DuckDuckGo), pengambilan URL, dan riset topik mendalam.
-- **🧠 Memori Episodik (Mira)**: Sistem penyimpanan dan pemanggilan memori jangka panjang untuk konteks yang persisten di berbagai sesi menggunakan pencarian vektor.
-- **🛠️ Pemanggilan Alat Cerdas**: Representasi visual eksekusi alat (Sedang Mengeksekusi → Selesai) dengan detail yang dapat diperluas.
-- **🔄 Sistem Auto-Fallback**: Secara otomatis beralih ke model LLM alternatif jika model utama gagal atau mengalami kesalahan.
-- **📋 Perencanaan Tugas**: Pemecahan tujuan strategis dan kemampuan perencanaan tugas.
-- **🖼️ Dukungan Gambar**: Kemampuan untuk menangani dan memproses data gambar URI dalam percakapan.
+- **🔥 Grill-Me (TGM Edition)**: Mode "Arsitek" di mana Rohadi menginterview Anda menggunakan framework **Total Growth Marketing (TGM)**. Mematangkan rencana bisnis atau arsitektur coding sebelum eksekusi.
+- **🧠 Centralized Global Brain**: Seluruh pengetahuan dan interaksi dari semua pengguna disentralisasi ke dalam satu "otak besar" di **Mira Context** (`nexus_central`). Rohadi belajar secara kolektif dari setiap sesi.
+- **🤖 Identitas Rohadi**: Asisten yang konsisten, ramah, dan profesional. Dirancang untuk tidak membocorkan model dasarnya dan fokus memberikan solusi strategis.
+- **🔄 Auto-Routing & Fallback**: Menggunakan **OpenRouter** sebagai provider utama dengan sistem fallback otomatis ke model-model free jika terjadi kegagalan sistem.
+- **🔍 Research & Tooling**: Akses real-time ke pencarian web, analisis kompetitor, dan riset topik mendalam yang terintegrasi langsung ke dalam percakapan.
+- **💬 Streaming UI Modern**: Antarmuka responsif dengan dukungan gambar, file upload, dan visualisasi eksekusi tool secara real-time.
 
 ---
 
 ## 🛠️ Stack Teknologi
 
 ### Backend
-- **Framework**: FastAPI (Python)
-- **Database**: PostgreSQL (SQLAlchemy)
-- **Memory**: Mira (Episodic Vector Search dengan `zvec`)
-- **LLM Provider**: DuckAI / OpenRouter
-- **Orkestrasi**: PM2
+- **Framework**: FastAPI (Python 3.10+)
+- **Identity Engine**: Rohadi Custom System Prompt
+- **Memory Manager**: Mira (Centralized Episodic Memory)
+- **AI Provider**: OpenRouter (Primary), DuckAI (Secondary)
+- **Orchestration**: PM2
 
 ### Frontend
-- **Framework**: Next.js 16 (App Router)
-- **Bahasa**: TypeScript
-- **Styling**: Tailwind CSS 4
-- **Komponen**: Assistant-UI, Lucide React, Framer Motion
+- **Framework**: Next.js 16 (App Router / Turbopack)
+- **Styling**: Tailwind CSS & Framer Motion
+- **Persistence**: Browser LocalStorage (UI Sessions) & Mira (Global Knowledge)
 
 ---
 
-## 🚀 Memulai
+## 🏗️ Framework Strategis: TGM
 
-### Prasyarat
-- Python 3.10+
-- Node.js & Bun
-- PostgreSQL
-- PM2 (`npm install -g pm2`)
-
-### 1. Klon Repositori
-```bash
-git clone <url-repo-anda>
-cd nexus-ai
-```
-
-### 2. Pengaturan Backend
-```bash
-cd backend
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env  # Konfigurasi variabel lingkungan Anda
-python3 init_local_db.py
-```
-
-### 3. Pengaturan Frontend
-```bash
-cd ../frontend
-bun install
-# atau
-npm install
-```
-
-### 4. Konfigurasi
-Edit `backend/.env` dengan kredensial Anda:
-```env
-DATABASE_URL=postgresql://user:pass@localhost:5432/nexus_db
-OPENROUTER_API_KEY=your_key_here
-DUCKAI_URL=http://localhost:3000/v1/chat/completions
-```
+Rohadi menggunakan 7 pilar **Total Growth Marketing** dalam setiap sesi Grill-Me:
+1. **Strategic**: Understanding Market, Value Creation, Brand Blueprint.
+2. **Tactical**: Awareness, Acquisition, Activation, CRM.
+3. **Engine**: Data & Insight untuk Continuous Learning & Optimization.
 
 ---
 
-## 🏃 Menjalankan Aplikasi
+## 🚀 Memulai Cepat
 
-Nexus AI menggunakan skrip manajemen dan PM2 untuk orkestrasi layanan.
+### Akses Publik
+Kunjungi: [https://chat.mrohadiz.my.id/](https://chat.mrohadiz.my.id/)
 
-### Menggunakan Skrip Manajemen
-```bash
-# Jalankan semua layanan
-./nexus.sh start
+### Instalasi Lokal
+1. **Klon & Setup**:
+   ```bash
+   git clone https://github.com/mrohadiz/nexus-ai.git
+   cd nexus-ai
+   ```
 
-# Periksa status
-./nexus.sh status
+2. **Backend**:
+   ```bash
+   cd backend && pip install -r requirements.txt
+   cp .env.example .env # Isi OPENROUTER_API_KEY
+   ```
 
-# Lihat log
-./nexus.sh logs
+3. **Frontend**:
+   ```bash
+   cd frontend && npm install
+   ```
 
-# Hentikan semua layanan
-./nexus.sh stop
-```
-
-### Mode Pengembangan
-Jika Anda ingin menjalankan layanan secara manual untuk pengembangan:
-
-**Backend:**
-```bash
-cd backend
-uvicorn main:app --reload --port 8000
-```
-
-**Frontend:**
-```bash
-cd frontend
-bun run dev --port 5008
-```
+4. **Jalankan via PM2**:
+   ```bash
+   ./nexus.sh start
+   ```
 
 ---
 
 ## 📂 Struktur Proyek
-
-```text
-nexus-ai/
-├── backend/                # Aplikasi FastAPI
-│   ├── logic/              # Layanan AI, memori, dan orkestrator
-│   ├── config/             # Konfigurasi Database & aplikasi
-│   ├── tools/              # Logika pencarian web dan alat riset
-│   └── main.py             # Endpoint API dan entry point
-├── frontend/               # Aplikasi Next.js
-│   ├── src/app/            # Halaman App router dan API routes
-│   ├── src/components/     # Komponen UI (ChatInterface, ToolCallDisplay)
-│   └── src/lib/            # Fungsi utilitas
-├── nexus.sh                # Skrip orkestrasi utama
-└── ecosystem.config.js     # Konfigurasi PM2
-```
+- `/backend/logic/ai_service.py`: Jantung orkestrasi model & auto-routing.
+- `/backend/logic/memory_manager.py`: Pengelola memori terpusat Mira.
+- `/frontend/src/components/ChatInterface.tsx`: UI Utama dengan mode Grill-Me.
 
 ---
 
-## 🌐 Domain & Akses
-
-Aplikasi ini dikonfigurasi untuk berjalan di:
-- **Public URL**: [https://chat.mrohadiz.my.id/](https://chat.mrohadiz.my.id/)
-- **Backend API**: `http://localhost:8000`
-- **Frontend Port**: `5008`
+## 🛡️ Keamanan & Privasi
+- **No Login Required**: Tidak ada database pengguna di backend.
+- **Client-Side Persistence**: Riwayat chat hanya ada di browser Anda.
+- **Global Intelligence**: Pengetahuan yang dipelajari Rohadi bersifat anonim dan terpusat di Mira.
 
 ---
 
-## 🛡️ Keamanan & Performa
-
-- **Manajemen CORS**: Asal (origins) yang diizinkan dapat dikonfigurasi untuk komunikasi frontend-backend yang aman.
-- **Streaming SSE**: Pengiriman data yang efisien melalui Server-Sent Events.
-- **Fallback Model**: Ketersediaan tinggi melalui logika percobaan ulang model utama dan sekunder.
-- **Optimasi Memori**: Memori episodik Mira untuk konteks jangka panjang yang efisien tanpa pembengkakan token.
-
----
-
-## 📝 Lisensi
-
-Proyek ini dilisensikan di bawah Lisensi MIT.
-
----
-
-**Dikembangkan dengan ❤️ oleh Tim Nexus AI.**
+**Dikembangkan oleh Tim Nexus AI untuk Pertumbuhan Bisnis yang Scalable.** 🚀
