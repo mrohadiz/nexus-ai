@@ -30,7 +30,7 @@ class ChatRequest(BaseModel):
     message: str
     history: Optional[List[Message]] = []
     session_id: Optional[str] = "default"
-    model: Optional[str] = "google/gemini-2.0-flash-001"
+    model: Optional[str] = "google/gemma-3-27b-it:free"
     images: Optional[List[str]] = []  # Base64 image data URIs
 
 class ChatResponse(BaseModel):
@@ -89,22 +89,25 @@ async def chat_stream_endpoint(req: ChatRequest):
                     images=req.images if req.images else None
                 ):
                     if chunk:
-                        # Check if it's an error message
+                        # Check if it's a structured SSE message (error/info/tool)
                         if chunk.startswith("data: "):
                             try:
                                 data = json.loads(chunk[6:])
-                                
-                                # If we got an error, save it and try next model
                                 if data.get('type') == 'error':
                                     last_error = data.get('message', 'Unknown error')
                                     print(f"[AUTO-FALLBACK] Error from {model}: {last_error}")
-                                    break  # Break inner loop, try next model
+                                    break  # try next model
+                                elif data.get('type') == 'tool_call':
+                                    yield chunk  # pass through
+                                    continue
                             except:
                                 pass
-                        
-                        # Successful chunk - stream it
-                        full_response += chunk
-                        yield chunk
+                            # pass other data: messages through (info, etc)
+                            yield chunk
+                        else:
+                            # Plain text chunk — wrap in SSE format for frontend
+                            full_response += chunk
+                            yield f"data: {json.dumps({'type': 'text', 'text': chunk})}\n\n"
                 
                 # If we got here and have content, success!
                 if full_response.strip():
@@ -296,28 +299,25 @@ Always cite your sources when using real-time data.""",
                     tool_choice="auto" if needs_tools else None
                 ):
                     if chunk:
-                        # Check if it's an error message
+                        # Check if it's a structured SSE message (error/info/tool)
                         if chunk.startswith("data: "):
                             try:
                                 data = json.loads(chunk[6:])
-                                
-                                # If we got an error, save it and try next model
                                 if data.get('type') == 'error':
                                     last_error = data.get('message', 'Unknown error')
                                     print(f"[AUTO-FALLBACK] Error from {model}: {last_error}")
-                                    break  # Break inner loop, try next model
-                                
-                                # If it's a tool call
-                                if "tool_calls" in data:
+                                    break  # try next model
+                                elif "tool_calls" in data:
                                     tool_calls_detected.extend(data["tool_calls"])
                                     yield f"data: {json.dumps({'type': 'tool_call', 'data': data['tool_calls']})}\n\n"
                                     continue
                             except:
                                 pass
-                        
-                        # Successful chunk - stream it
-                        full_response += chunk
-                        yield chunk
+                            yield chunk  # pass info/other messages through
+                        else:
+                            # Plain text chunk — wrap in SSE format for frontend
+                            full_response += chunk
+                            yield f"data: {json.dumps({'type': 'text', 'text': chunk})}\n\n"
                 
                 # If we got here and have content, success!
                 if full_response.strip():
