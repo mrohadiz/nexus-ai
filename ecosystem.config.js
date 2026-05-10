@@ -13,12 +13,12 @@ module.exports = {
     {
       name: "nexus-frontend",
       script: "bun",
-      args: "run start --port 5008 --hostname 0.0.0.0",
+      args: "run dev --port 5008 --hostname 0.0.0.0",
       cwd: "/root/nexus-ai/frontend",
       interpreter: "none",
       env: {
         NEXT_TELEMETRY_DISABLED: "1",
-        NODE_ENV: "production"
+        NODE_ENV: "development"
       }
     }
   ]
