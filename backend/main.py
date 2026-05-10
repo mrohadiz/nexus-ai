@@ -32,6 +32,7 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = "default"
     model: Optional[str] = "google/gemma-3-27b-it:free"
     images: Optional[List[str]] = []  # Base64 image data URIs
+    grill_mode: Optional[bool] = False  # Flag to activate Grill-Me skill
 
 class ChatResponse(BaseModel):
     response: str
@@ -50,6 +51,7 @@ def health_check():
     return {"status": "healthy", "version": "0.1.0"}
 
 from logic.ai_service import ai_service
+from tools.grill_me_skill_v2 import grill_me_skill  # v2: Contextual Strategic Reasoning Engine
 
 from fastapi.responses import StreamingResponse
 import json
@@ -116,7 +118,8 @@ ATURAN IDENTITAS (WAJIB, TIDAK BOLEH DILANGGAR):
                         else:
                             # Plain text chunk — wrap in SSE format for frontend
                             full_response += chunk
-                            yield f"data: {json.dumps({'type': 'text', 'text': chunk})}\n\n"
+                            # Properly escape the text for JSON encoding
+                            yield f"data: {json.dumps({'type': 'text', 'text': chunk}, ensure_ascii=False)}\n\n"
                 
                 # If we got here and have content, success!
                 if full_response.strip():
@@ -145,13 +148,18 @@ ATURAN IDENTITAS (WAJIB, TIDAK BOLEH DILANGGAR):
 @app.post("/chat/grill")
 async def grill_me_endpoint(req: ChatRequest):
     """
-    Grill-Me: Rohadi menginterview user satu pertanyaan per respons
+    Grill-Me: Rohadi menginterview user SATU PERTANYAAN per respons
     untuk mematangkan rencana/ide sebelum dieksekusi.
+    
+    This works like a Claude Skill - conversational, one question at a time.
     """
     GRILL_SYSTEM_PROMPT = """Kamu adalah Rohadi dalam mode GRILL-ME — Spesialis Arsitektur Coding & TOTAL GROWTH MARKETING (TGM).
 
-PERAN KAMU:
-Kamu adalah "arsitek" dan "strategist" yang menginterview pengguna menggunakan framework TGM untuk memastikan rencana (Coding atau Marketing) benar-benar matang, terukur, dan scalable.
+CARA KERJA GRILL-ME:
+- Interview user SATU PERTANYAAN per respons
+- Selalu berikan rekomendasi untuk setiap pertanyaan
+- Jangan tumpuk banyak pertanyaan sekaligus
+- Gunakan framework TGM untuk struktur interview
 
 STRUKTUR BERPIKIR TGM (Gunakan ini saat menginterview):
 1. STRATEGIC: Understanding Market (Peluang), Value Creation (Solusi Unik), Brand Blueprint (Pesan & Fondasi).
@@ -169,12 +177,13 @@ ATURAN GRILL-ME (WAJIB DIIKUTI):
 
 FORMAT RESPONS:
 🔍 **Pertanyaan [Fase TGM]:** [Satu pertanyaan tajam]
+
 💡 **Rekomendasi Rohadi:** [Saran strategis/teknis kamu]
 
 IDENTITAS:
 - Nama kamu Rohadi.
 - Gunakan bahasa Indonesia.
-- Pengetahuan kamu tersimpan di Mira Memory (Eepisodic Memory)."""
+- Pengetahuan kamu tersimpan di Mira Memory (Episodic Memory)."""
 
     mira_context = memory_manager.mira_recall(req.message, room="nexus_central")
     system_prompt = GRILL_SYSTEM_PROMPT
@@ -263,10 +272,25 @@ ATURAN IDENTITAS (WAJIB, TIDAK BOLEH DILANGGAR):
 
 @app.post("/chat/tools")
 async def chat_with_tools(req: ChatRequest):
-    """Chat endpoint with tool calling support"""
+    """Chat endpoint with tool calling support including Grill-Me skill"""
     
-    # Define available tools with REAL web search capabilities
+    # Define available tools with REAL web search capabilities AND Grill-Me skill
     tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "grill_me",
+                "description": "Interview user about their plan/design using TGM framework. Ask ONE question at a time with recommendations. Use when user mentions 'grill me' or wants to stress-test an idea.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "user_idea": {"type": "string", "description": "The user's initial idea or plan to grill"},
+                        "conversation_stage": {"type": "string", "enum": ["initial", "follow_up", "final"], "description": "Stage of the interview"}
+                    },
+                    "required": ["user_idea"]
+                }
+            }
+        },
         {
             "type": "function",
             "function": {
@@ -357,8 +381,32 @@ async def chat_with_tools(req: ChatRequest):
         full_response = ""
         tool_calls_detected = []
         
+        # SPECIAL CASE: If grill_mode is active, bypass AI and use Grill-Me skill directly
+        if req.grill_mode:
+            print(f"[GRILL-ME] Activated - Bypassing AI, using contextual reasoning engine")
+            try:
+                # Generate grill question using v2 contextual reasoning engine
+                question_data = grill_me_skill.generate_grill_question(
+                    user_input=req.message,
+                    conversation_history=req.history,
+                    session_id=req.session_id or "default"
+                )
+                formatted_response = grill_me_skill.format_response(question_data)
+                
+                # Stream the response
+                yield f"data: {json.dumps({'type': 'text', 'text': formatted_response}, ensure_ascii=False)}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+            except Exception as e:
+                print(f"[GRILL-ME] Error: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                yield f"data: {json.dumps({'type': 'error', 'message': f'Grill-Me error: {str(e)}'})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+        
+        # Normal mode: Use AI with optional tools
         # Only use tools if user explicitly asks for web search/research
-        # Check if prompt contains keywords that suggest need for real-time data
         needs_tools = any(keyword in req.message.lower() for keyword in [
             'research', 'search', 'current', 'latest', 'today', 'real-time', 
             'template', 'seo', 'keyword', 'trend', 'news', 'people also ask'
@@ -417,7 +465,8 @@ KEMAPUAN TOOLS:
                         else:
                             # Plain text chunk — wrap in SSE format for frontend
                             full_response += chunk
-                            yield f"data: {json.dumps({'type': 'text', 'text': chunk})}\n\n"
+                            # Properly escape the text for JSON encoding
+                            yield f"data: {json.dumps({'type': 'text', 'text': chunk}, ensure_ascii=False)}\n\n"
                 
                 # If we got here and have content, success!
                 if full_response.strip():
@@ -438,6 +487,9 @@ KEMAPUAN TOOLS:
         # If tool calls were made, process them
         if tool_calls_detected:
             for tool_call in tool_calls_detected:
+                tool_name = tool_call.get('function', {}).get('name')
+                
+                # Execute tools (web_search, research_topic, etc.)
                 result = await ai_service.execute_tool_call(tool_call)
                 yield f"data: {json.dumps({'type': 'tool_result', 'tool_call_id': tool_call.get('id'), 'result': result})}\n\n"
         

@@ -96,7 +96,7 @@ class AIService:
         return chain
 
 
-    async def call_ai_stream(self, prompt: str, history: List = [], system_prompt: str = "You are Nexus AI, a helpful personal assistant.", model: str = "google/gemma-3-27b-it:free", tools: Optional[List[Dict]] = None, tool_choice: Optional[str] = "auto", images: Optional[List[str]] = None):
+    async def call_ai_stream(self, prompt: str, history: List = [], system_prompt: str = "You are Nexus AI, a helpful personal assistant.", model: str = "openrouter/free", tools: Optional[List[Dict]] = None, tool_choice: Optional[str] = "auto", images: Optional[List[str]] = None):
         import httpx
         
         url, api_key = self._get_config()
@@ -135,7 +135,15 @@ class AIService:
             for msg in history:
                 role = msg.role if hasattr(msg, 'role') else msg.get('role')
                 content = msg.content if hasattr(msg, 'content') else msg.get('content')
-                messages.append({"role": role, "content": content})
+                item = {"role": role, "content": content}
+                
+                # Support reasoning_details if present
+                if hasattr(msg, 'reasoning_details'):
+                    item["reasoning_details"] = getattr(msg, 'reasoning_details')
+                elif isinstance(msg, dict) and "reasoning_details" in msg:
+                    item["reasoning_details"] = msg["reasoning_details"]
+                    
+                messages.append(item)
             
             if images and len(images) > 0:
                 content_parts = [{"type": "text", "text": prompt}]
@@ -161,6 +169,10 @@ class AIService:
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = tool_choice
+            
+        # Enable reasoning for OpenRouter free models if requested or by default
+        if self.provider == "openrouter":
+            payload["reasoning"] = {"enabled": True}
         
         max_retries = 2
         for attempt in range(max_retries):
@@ -240,7 +252,15 @@ class AIService:
             for msg in history:
                 role = msg.role if hasattr(msg, 'role') else msg.get('role')
                 content = msg.content if hasattr(msg, 'content') else msg.get('content')
-                messages.append({"role": role, "content": content})
+                item = {"role": role, "content": content}
+                
+                # Support reasoning_details if present
+                if hasattr(msg, 'reasoning_details'):
+                    item["reasoning_details"] = getattr(msg, 'reasoning_details')
+                elif isinstance(msg, dict) and "reasoning_details" in msg:
+                    item["reasoning_details"] = msg["reasoning_details"]
+                    
+                messages.append(item)
             
             if images and len(images) > 0:
                 content_parts = [{"type": "text", "text": prompt}]
