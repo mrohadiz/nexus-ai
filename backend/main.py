@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 import os
+import json
+from datetime import datetime
 from dotenv import load_dotenv
 
 from config.database import init_db, get_db
@@ -395,6 +397,43 @@ async def chat_with_tools(req: ChatRequest):
                 
                 # Stream the response
                 yield f"data: {json.dumps({'type': 'text', 'text': formatted_response}, ensure_ascii=False)}\n\n"
+                
+                # === AUTO-STORAGE for Grill-Me mode ===
+                try:
+                    from logic.memory_manager import memory_manager
+                    
+                    # Store user input
+                    user_data = {
+                        "type": "grill_me_user",
+                        "content": req.message,
+                        "session_id": req.session_id or "default",
+                        "mode": "grill_me",
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    memory_manager.mira_store(
+                        content=json.dumps(user_data),
+                        room=f"grill_{req.session_id or 'default'}"
+                    )
+                    
+                    # Store AI question
+                    ai_data = {
+                        "type": "grill_me_question",
+                        "content": formatted_response[:4500],
+                        "session_id": req.session_id or "default",
+                        "mode": "grill_me",
+                        "phase": question_data.get('phase', 'unknown'),
+                        "leverage": question_data.get('leverage', 'unknown'),
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    memory_manager.mira_store(
+                        content=json.dumps(ai_data),
+                        room=f"grill_{req.session_id or 'default'}"
+                    )
+                    
+                    print(f"[MIRA] ✅ Stored Grill-Me conversation ({len(formatted_response)} chars)")
+                except Exception as e:
+                    print(f"[MIRA] ⚠️ Error storing Grill-Me: {e}")
+                
                 yield "data: [DONE]\n\n"
                 return
             except Exception as e:
@@ -492,6 +531,42 @@ KEMAPUAN TOOLS:
                 # Execute tools (web_search, research_topic, etc.)
                 result = await ai_service.execute_tool_call(tool_call)
                 yield f"data: {json.dumps({'type': 'tool_result', 'tool_call_id': tool_call.get('id'), 'result': result})}\n\n"
+        
+        # === AUTO-STORAGE: Save conversation to Mira Context ===
+        if full_response.strip() and req.session_id:
+            try:
+                from logic.memory_manager import memory_manager
+                
+                # Store user message
+                user_data = {
+                    "type": "user_message",
+                    "content": req.message,
+                    "session_id": req.session_id,
+                    "model": req.model,
+                    "timestamp": datetime.now().isoformat()
+                }
+                memory_manager.mira_store(
+                    content=json.dumps(user_data),
+                    room=f"session_{req.session_id}"
+                )
+                
+                # Store AI response (truncate if too long for Mira)
+                response_preview = full_response[:4500]  # Leave room for JSON overhead
+                ai_data = {
+                    "type": "ai_response",
+                    "content": response_preview,
+                    "session_id": req.session_id,
+                    "model": req.model,
+                    "timestamp": datetime.now().isoformat()
+                }
+                memory_manager.mira_store(
+                    content=json.dumps(ai_data),
+                    room=f"session_{req.session_id}"
+                )
+                
+                print(f"[MIRA] ✅ Stored conversation from session {req.session_id} ({len(full_response)} chars)")
+            except Exception as e:
+                print(f"[MIRA] ⚠️ Error storing conversation: {e}")
         
         yield "data: [DONE]\n\n"
     
