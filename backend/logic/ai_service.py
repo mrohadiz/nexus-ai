@@ -2,7 +2,13 @@ import os
 import asyncio
 import requests
 import json
-from typing import Optional, List, Dict
+import time
+from typing import Optional, List, Dict, Tuple
+
+# ----- Free model cache (module-level, shared across requests) -----
+_free_models_cache: List[str] = []
+_free_models_fetched_at: float = 0.0
+_FREE_MODELS_TTL = 600  # refresh every 10 minutes
 
 class AIService:
     def __init__(self):
@@ -16,11 +22,79 @@ class AIService:
         self.openrouter_url = os.getenv("OPENROUTER_URL", "https://openrouter.ai/api/v1/chat/completions")
         self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "")
 
+        # Hardcoded reliable free fallbacks (used if API fetch fails)
+        self._default_free_models = [
+            "google/gemini-2.0-flash-001",
+            "google/gemma-3-27b-it:free",
+            "meta-llama/llama-3.1-8b-instruct:free",
+            "mistralai/mistral-7b-instruct:free",
+            "qwen/qwen-2.5-7b-instruct:free",
+        ]
+
     def _get_config(self):
         if self.provider == "openrouter":
             return self.openrouter_url, self.openrouter_api_key
         else:
             return self.duckai_url, self.duckai_api_key
+
+    def fetch_free_models(self) -> List[str]:
+        """Fetch & cache the list of free models from OpenRouter API.
+        Models are considered free if prompt pricing == '0' OR id ends with ':free'.
+        Cache is refreshed every FREE_MODELS_TTL seconds.
+        """
+        global _free_models_cache, _free_models_fetched_at
+
+        now = time.time()
+        if _free_models_cache and (now - _free_models_fetched_at) < _FREE_MODELS_TTL:
+            return _free_models_cache
+
+        try:
+            print("[FREE-ROUTER] Fetching free models from OpenRouter API...")
+            resp = requests.get(
+                "https://openrouter.ai/api/v1/models",
+                headers={"Authorization": f"Bearer {self.openrouter_api_key}"},
+                timeout=10
+            )
+            if resp.status_code == 200:
+                data = resp.json().get("data", [])
+                free = []
+                for m in data:
+                    model_id = m.get("id", "")
+                    prompt_price = str(m.get("pricing", {}).get("prompt", "1"))
+                    completion_price = str(m.get("pricing", {}).get("completion", "1"))
+                    ctx = m.get("context_length", 0)
+
+                    is_free = (
+                        model_id.endswith(":free") or
+                        (prompt_price == "0" and completion_price == "0")
+                    )
+                    # Filter out experimental/low-quality models
+                    is_usable = ctx >= 8192 and "ocr" not in model_id and "vision-ocr" not in model_id
+
+                    if is_free and is_usable:
+                        free.append(model_id)
+
+                if free:
+                    _free_models_cache = free
+                    _free_models_fetched_at = now
+                    print(f"[FREE-ROUTER] Found {len(free)} free models: {free[:5]}...")
+                    return free
+        except Exception as e:
+            print(f"[FREE-ROUTER] Failed to fetch free models: {e}")
+
+        # Fallback to defaults
+        return self._default_free_models
+
+    async def fetch_free_models_async(self) -> List[str]:
+        """Async wrapper to fetch free models without blocking the event loop."""
+        return await asyncio.to_thread(self.fetch_free_models)
+
+    def get_fallback_chain(self, primary_model: str) -> List[str]:
+        """Build fallback chain: [primary] + free_models (excluding primary)."""
+        free = self.fetch_free_models()
+        chain = [primary_model] + [m for m in free if m != primary_model]
+        return chain
+
 
     async def call_ai_stream(self, prompt: str, history: List = [], system_prompt: str = "You are Nexus AI, a helpful personal assistant.", model: str = "google/gemini-2.0-flash-001", tools: Optional[List[Dict]] = None, tool_choice: Optional[str] = "auto", images: Optional[List[str]] = None):
         import httpx

@@ -68,16 +68,9 @@ async def chat_stream_endpoint(req: ChatRequest):
     async def event_generator():
         full_response = ""
         
-        # Define fallback models
-        primary_model = req.model
-        fallback_models = [
-            "google/gemini-2.0-flash-001",
-            "openai/gpt-4o-mini",
-            "anthropic/claude-3.5-sonnet"
-        ]
-        
-        # Try primary model first, then fallbacks
-        models_to_try = [primary_model] + [m for m in fallback_models if m != primary_model]
+        # Build fallback chain: primary model + all available free models from OpenRouter
+        models_to_try = ai_service.get_fallback_chain(req.model)
+        print(f"[AUTO-ROUTER] Fallback chain ({len(models_to_try)} models): {models_to_try[:3]}...")
         
         last_error = None
         for attempt_idx, model in enumerate(models_to_try):
@@ -264,16 +257,9 @@ async def chat_with_tools(req: ChatRequest):
             'template', 'seo', 'keyword', 'trend', 'news', 'people also ask'
         ])
         
-        # Define fallback models
-        primary_model = req.model
-        fallback_models = [
-            "google/gemini-2.0-flash-001",
-            "openai/gpt-4o-mini",
-            "anthropic/claude-3.5-sonnet"
-        ]
-        
-        # Try primary model first, then fallbacks
-        models_to_try = [primary_model] + [m for m in fallback_models if m != primary_model]
+        # Build fallback chain: primary model + all available free models from OpenRouter
+        models_to_try = ai_service.get_fallback_chain(req.model)
+        print(f"[AUTO-ROUTER] Fallback chain ({len(models_to_try)} models): {models_to_try[:3]}...")
         
         last_error = None
         for attempt_idx, model in enumerate(models_to_try):
