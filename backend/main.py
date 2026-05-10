@@ -63,7 +63,26 @@ async def chat_stream_endpoint(req: ChatRequest):
     # 1. Recall from Mira (Episodic)
     mira_context = memory_manager.mira_recall(req.message, room="nexus_central")
     
-    # 2. Build Enriched Prompt dengan identitas Rohadi
+    # 2. Define available tools (web_search)
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "web_search",
+                "description": "Search the web for CURRENT, REAL-TIME information using DuckDuckGo. Use this for news, trends, live data, and current events.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search query (use specific keywords)"},
+                        "num_results": {"type": "number", "description": "Number of results (default 5)"}
+                    },
+                    "required": ["query"]
+                }
+            }
+        }
+    ]
+    
+    # 3. Build Enriched Prompt dengan identitas Rohadi
     system_prompt = """Kamu adalah Rohadi, asisten AI pribadi yang cerdas dan ramah.
 
 ATURAN IDENTITAS (WAJIB, TIDAK BOLEH DILANGGAR):
@@ -73,13 +92,25 @@ ATURAN IDENTITAS (WAJIB, TIDAK BOLEH DILANGGAR):
 - Jika ditanya "siapa kamu": jawab "Saya Rohadi, asisten AI pribadi kamu."
 - Jika ditanya "siapa yang membuat kamu": jawab "Saya dibuat khusus untuk membantu kamu."
 - Gunakan bahasa Indonesia secara default, kecuali pengguna menulis dalam bahasa lain
-- Jadilah singkat, jelas, dan profesional"""
+- Jadilah singkat, jelas, dan profesional
+
+KEMAMPUAN:
+- Kamu memiliki akses ke web_search tool untuk mencari data real-time
+- Jika user meminta riset, info terkini, atau data terbaru, gunakan web_search tool
+- Jangan pernah bilang kamu tidak bisa search - kamu BISA pakai web_search tool!
+- Gunakan bahasa Indonesia untuk semua respons"""
+    
     if mira_context:
         system_prompt += f"\n\n[KONTEKS DARI MEMORI]:\n{mira_context}"
     
-    # 3. Define Generator for Streaming with auto-fallback
+    # 4. Detect if user wants real-time data (supports both English and Indonesian)
+    # Always enable tools - let AI decide when to use them
+    needs_tools = True  # Always provide tools, AI will decide when to use them
+    
+    # 5. Define Generator for Streaming with auto-fallback
     async def event_generator():
         full_response = ""
+        tool_calls_detected = []  # Track any tool calls made during streaming
         
         # Build fallback chain: primary model + all available free models from OpenRouter
         models_to_try = ai_service.get_fallback_chain(req.model)
@@ -99,6 +130,8 @@ ATURAN IDENTITAS (WAJIB, TIDAK BOLEH DILANGGAR):
                     history=req.history, 
                     system_prompt=system_prompt, 
                     model=model,
+                    tools=tools if needs_tools else None,
+                    tool_choice="auto" if needs_tools else None,
                     images=req.images if req.images else None
                 ):
                     if chunk:
@@ -111,6 +144,9 @@ ATURAN IDENTITAS (WAJIB, TIDAK BOLEH DILANGGAR):
                                     print(f"[AUTO-FALLBACK] Error from {model}: {last_error}")
                                     break  # try next model
                                 elif data.get('type') == 'tool_call':
+                                    # Capture tool calls for execution after streaming
+                                    if 'data' in data:
+                                        tool_calls_detected.extend(data['data'])
                                     yield chunk  # pass through
                                     continue
                             except:
@@ -139,7 +175,16 @@ ATURAN IDENTITAS (WAJIB, TIDAK BOLEH DILANGGAR):
             print(f"[AUTO-FALLBACK] {error_msg}")
             yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
         
-        # 4. Store in Mira after stream completion - Centralized
+        # If tool calls were made, process them
+        if tool_calls_detected:
+            for tool_call in tool_calls_detected:
+                tool_name = tool_call.get('function', {}).get('name')
+                
+                # Execute tools (web_search, etc.)
+                result = await ai_service.execute_tool_call(tool_call)
+                yield f"data: {json.dumps({'type': 'tool_result', 'tool_call_id': tool_call.get('id'), 'result': result})}\n\n"
+        
+        # 5. Store in Mira after stream completion - Centralized
         if full_response:
             memory_manager.mira_store(f"User: {req.message}\nRohadi: {full_response}", room="nexus_central")
             
@@ -445,10 +490,15 @@ async def chat_with_tools(req: ChatRequest):
                 return
         
         # Normal mode: Use AI with optional tools
-        # Only use tools if user explicitly asks for web search/research
+        # Detect if user wants real-time data (supports both English and Indonesian)
         needs_tools = any(keyword in req.message.lower() for keyword in [
+            # English keywords
             'research', 'search', 'current', 'latest', 'today', 'real-time', 
-            'template', 'seo', 'keyword', 'trend', 'news', 'people also ask'
+            'template', 'seo', 'keyword', 'trend', 'news', 'people also ask',
+            # Indonesian keywords
+            'riset', 'cari', 'saat ini', 'terbaru', 'hari ini', 'real-time',
+            'tren', 'berita', 'kondisi sekarang', 'data terbaru',
+            'analisa', 'analisis', 'laporan', 'update', 'sekarang'
         ])
         
         # Build fallback chain: primary model + all available free models from OpenRouter
