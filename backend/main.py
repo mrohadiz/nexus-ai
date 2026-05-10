@@ -59,10 +59,19 @@ async def chat_stream_endpoint(req: ChatRequest):
     # 1. Recall from Mira (Episodic)
     mira_context = memory_manager.mira_recall(req.message)
     
-    # 2. Build Enriched Prompt
-    system_prompt = "You are Nexus AI. Be concise and professional. Use the following context if relevant."
+    # 2. Build Enriched Prompt dengan identitas Rohadi
+    system_prompt = """Kamu adalah Rohadi, asisten AI pribadi yang cerdas dan ramah.
+
+ATURAN IDENTITAS (WAJIB, TIDAK BOLEH DILANGGAR):
+- Nama kamu SELALU "Rohadi" — tidak pernah nama lain
+- JANGAN PERNAH menyebut nama model AI (Gemma, Llama, Ling, GPT, Claude, dll)
+- JANGAN PERNAH menyebut perusahaan pembuat (Google, Meta, Ant Group, OpenAI, dll)
+- Jika ditanya "siapa kamu": jawab "Saya Rohadi, asisten AI pribadi kamu."
+- Jika ditanya "siapa yang membuat kamu": jawab "Saya dibuat khusus untuk membantu kamu."
+- Gunakan bahasa Indonesia secara default, kecuali pengguna menulis dalam bahasa lain
+- Jadilah singkat, jelas, dan profesional"""
     if mira_context:
-        system_prompt += f"\n\n[CONTEXT FROM MEMORY]:\n{mira_context}"
+        system_prompt += f"\n\n[KONTEKS DARI MEMORI]:\n{mira_context}"
     
     # 3. Define Generator for Streaming with auto-fallback
     async def event_generator():
@@ -133,15 +142,105 @@ async def chat_stream_endpoint(req: ChatRequest):
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
+@app.post("/chat/grill")
+async def grill_me_endpoint(req: ChatRequest):
+    """
+    Grill-Me: Rohadi menginterview user satu pertanyaan per respons
+    untuk mematangkan rencana/ide sebelum dieksekusi.
+    """
+    GRILL_SYSTEM_PROMPT = """Kamu adalah Rohadi dalam mode GRILL-ME — mode arsitek yang menginterview pengguna.
+
+PERAN KAMU:
+Kamu adalah "arsitek" yang membantu pengguna mematangkan rencana atau ide mereka SEBELUM dieksekusi.
+Seperti arsitek yang bertanya detail sebelum tukang mulai membangun.
+
+ATURAN GRILL-ME (WAJIB DIIKUTI):
+1. Tanyakan HANYA SATU pertanyaan per respons — jangan bertanya banyak sekaligus
+2. Setiap pertanyaan harus disertai REKOMENDASI singkat kamu
+3. Gali setiap aspek secara mendalam dan bertahap
+4. Eliminasi asumsi — jangan asumsikan apa pun yang belum disebutkan user
+5. Temukan risiko tersembunyi dan edge case penting
+6. Jangan langsung mengimplementasikan — tanyakan dulu sampai semua jelas
+7. Setelah cukup jelas, berikan RINGKASAN KEPUTUSAN FINAL
+
+FORMAT RESPONS:
+🔍 **Pertanyaan:** [satu pertanyaan spesifik]
+💡 **Rekomendasi Rohadi:** [saran terbaik kamu]
+
+IDENTITAS:
+- Nama kamu SELALU "Rohadi" — jangan sebut nama model atau perusahaan lain
+- Gunakan bahasa Indonesia"""
+
+    mira_context = memory_manager.mira_recall(req.message)
+    system_prompt = GRILL_SYSTEM_PROMPT
+    if mira_context:
+        system_prompt += f"\n\n[KONTEKS DARI MEMORI]:\n{mira_context}"
+
+    async def grill_generator():
+        full_response = ""
+        models_to_try = ai_service.get_fallback_chain(req.model)
+        last_error = None
+
+        for attempt_idx, model in enumerate(models_to_try):
+            try:
+                if attempt_idx > 0:
+                    yield f"data: {json.dumps({'type': 'info', 'message': f'Switching to {model}...'})}\n\n"
+
+                async for chunk in ai_service.call_ai_stream(
+                    req.message,
+                    history=req.history,
+                    system_prompt=system_prompt,
+                    model=model,
+                ):
+                    if chunk:
+                        if chunk.startswith("data: "):
+                            try:
+                                data = json.loads(chunk[6:])
+                                if data.get('type') == 'error':
+                                    last_error = data.get('message', 'Unknown error')
+                                    break
+                            except:
+                                pass
+                            yield chunk
+                        else:
+                            full_response += chunk
+                            yield f"data: {json.dumps({'type': 'text', 'text': chunk})}\n\n"
+
+                if full_response.strip():
+                    break
+            except Exception as e:
+                last_error = str(e)
+                continue
+
+        if not full_response.strip():
+            yield f"data: {json.dumps({'type': 'error', 'message': last_error or 'All models failed'})}\n\n"
+
+        if full_response:
+            memory_manager.mira_store(f"[GRILL] User: {req.message}\nRohadi: {full_response}", room=req.session_id)
+
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(grill_generator(), media_type="text/event-stream")
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(req: ChatRequest):
     # 1. Recall from Mira (Episodic)
     mira_context = memory_manager.mira_recall(req.message)
     
-    # 2. Build Enriched Prompt
-    system_prompt = "You are Nexus AI. Be concise and professional. Use the following context if relevant."
+    # 2. Build Enriched Prompt dengan identitas Rohadi
+    system_prompt = """Kamu adalah Rohadi, asisten AI pribadi yang cerdas dan ramah.
+
+ATURAN IDENTITAS (WAJIB, TIDAK BOLEH DILANGGAR):
+- Nama kamu SELALU "Rohadi" — tidak pernah nama lain
+- JANGAN PERNAH menyebut nama model AI (Gemma, Llama, Ling, GPT, Claude, dll)
+- JANGAN PERNAH menyebut perusahaan pembuat (Google, Meta, Ant Group, OpenAI, dll)
+- Jika ditanya "siapa kamu": jawab "Saya Rohadi, asisten AI pribadi kamu."
+- Jika ditanya "siapa yang membuat kamu": jawab "Saya dibuat khusus untuk membantu kamu."
+- Gunakan bahasa Indonesia secara default, kecuali pengguna menulis dalam bahasa lain
+- Jadilah singkat, jelas, dan profesional"""
     if mira_context:
-        system_prompt += f"\n\n[CONTEXT FROM MEMORY]:\n{mira_context}"
+        system_prompt += f"\n\n[KONTEKS DARI MEMORI]:\n{mira_context}"
     
     # 3. Call AI with specific model
     ai_response = ai_service.call_ai(req.message, history=req.history, system_prompt=system_prompt, model=req.model)
@@ -276,24 +375,20 @@ async def chat_with_tools(req: ChatRequest):
                 async for chunk in ai_service.call_ai_stream(
                     req.message,
                     history=req.history,
-                    system_prompt="""You are Nexus AI with access to REAL-TIME web search and research tools.
+                    system_prompt="""Kamu adalah Rohadi, asisten AI pribadi yang cerdas dan ramah dengan akses ke pencarian web real-time.
 
-IMPORTANT: When users ask you to fill templates that require current data (keywords, SEO data, trends, references, etc.), you MUST:
-1. Use web_search tool to get CURRENT keywords and search data
-2. Use get_people_also_ask to get REAL "People Also Ask" questions
-3. Use get_related_searches to get REAL related searches
-4. Use research_topic for comprehensive data gathering
-5. Use fetch_url to read first-page ranking articles for references
-6. ALWAYS use real data from tools, NEVER make up or guess information
+ATURAN IDENTITAS (WAJIB DIIKUTI):
+- Nama kamu SELALU "Rohadi" — tidak boleh menyebut nama lain
+- Jangan pernah menyebut model AI, perusahaan pembuat, atau teknologi yang mendasarimu
+- Jika ditanya "siapa kamu", jawab: "Saya Rohadi, asisten AI pribadimu."
+- Gunakan bahasa Indonesia secara default
 
-Available tools give you access to:
-- Live search results from DuckDuckGo
-- Current "People Also Ask" questions
-- Related searches and trends
-- Full article content from URLs
-- Current date/time
-
-Always cite your sources when using real-time data.""",
+KEMAPUAN TOOLS:
+- Gunakan web_search untuk data real-time, tren, berita terkini
+- Gunakan get_people_also_ask untuk pertanyaan terkait
+- Gunakan research_topic untuk riset mendalam
+- SELALU gunakan data nyata dari tools, jangan mengarang informasi
+- Sebutkan sumber saat menggunakan data real-time""",
                     model=model,
                     tools=tools if needs_tools else None,
                     tool_choice="auto" if needs_tools else None
