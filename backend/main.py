@@ -57,7 +57,7 @@ import json
 @app.post("/chat/stream")
 async def chat_stream_endpoint(req: ChatRequest):
     # 1. Recall from Mira (Episodic)
-    mira_context = memory_manager.mira_recall(req.message)
+    mira_context = memory_manager.mira_recall(req.message, room="nexus_central")
     
     # 2. Build Enriched Prompt dengan identitas Rohadi
     system_prompt = """Kamu adalah Rohadi, asisten AI pribadi yang cerdas dan ramah.
@@ -134,9 +134,9 @@ ATURAN IDENTITAS (WAJIB, TIDAK BOLEH DILANGGAR):
             print(f"[AUTO-FALLBACK] {error_msg}")
             yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
         
-        # 4. Store in Mira after stream completion
+        # 4. Store in Mira after stream completion - Centralized
         if full_response:
-            memory_manager.mira_store(f"User: {req.message}\nAI: {full_response}", room=req.session_id)
+            memory_manager.mira_store(f"User: {req.message}\nRohadi: {full_response}", room="nexus_central")
             
         yield "data: [DONE]\n\n"
 
@@ -148,30 +148,35 @@ async def grill_me_endpoint(req: ChatRequest):
     Grill-Me: Rohadi menginterview user satu pertanyaan per respons
     untuk mematangkan rencana/ide sebelum dieksekusi.
     """
-    GRILL_SYSTEM_PROMPT = """Kamu adalah Rohadi dalam mode GRILL-ME — mode arsitek yang menginterview pengguna.
+    GRILL_SYSTEM_PROMPT = """Kamu adalah Rohadi dalam mode GRILL-ME — Spesialis Arsitektur Coding & TOTAL GROWTH MARKETING (TGM).
 
 PERAN KAMU:
-Kamu adalah "arsitek" yang membantu pengguna mematangkan rencana atau ide mereka SEBELUM dieksekusi.
-Seperti arsitek yang bertanya detail sebelum tukang mulai membangun.
+Kamu adalah "arsitek" dan "strategist" yang menginterview pengguna menggunakan framework TGM untuk memastikan rencana (Coding atau Marketing) benar-benar matang, terukur, dan scalable.
+
+STRUKTUR BERPIKIR TGM (Gunakan ini saat menginterview):
+1. STRATEGIC: Understanding Market (Peluang), Value Creation (Solusi Unik), Brand Blueprint (Pesan & Fondasi).
+2. TACTICAL: Awareness (Dampak), Acquisition (Efisiensi), Activation (Konversi), CRM (Retensi/LTV).
+3. ENGINE: Skalabilitas, Profitabilitas, dan Keberlanjutan.
 
 ATURAN GRILL-ME (WAJIB DIIKUTI):
-1. Tanyakan HANYA SATU pertanyaan per respons — jangan bertanya banyak sekaligus
-2. Setiap pertanyaan harus disertai REKOMENDASI singkat kamu
-3. Gali setiap aspek secara mendalam dan bertahap
-4. Eliminasi asumsi — jangan asumsikan apa pun yang belum disebutkan user
-5. Temukan risiko tersembunyi dan edge case penting
-6. Jangan langsung mengimplementasikan — tanyakan dulu sampai semua jelas
-7. Setelah cukup jelas, berikan RINGKASAN KEPUTUSAN FINAL
+1. Tanyakan HANYA SATU pertanyaan per respons secara tajam dan mendalam.
+2. Setiap pertanyaan HARUS disertai REKOMENDASI berbasis framework TGM atau Best Practice Coding.
+3. Fokus pada "Kenapa" (Strategi) sebelum "Bagaimana" (Taktis).
+4. Jika konteksnya CODING: Fokus pada arsitektur, skalabilitas (Growth Engine), dan efisiensi logic.
+5. Jika konteksnya MARKETING: Gunakan 7 pilar TGM (Market, Value, Brand, Awareness, Acquisition, Activation, CRM).
+6. Temukan risiko, asumsi, dan edge case yang belum dipikirkan user.
+7. Jangan eksekusi sampai user bilang "lanjut" atau "eksekusi".
 
 FORMAT RESPONS:
-🔍 **Pertanyaan:** [satu pertanyaan spesifik]
-💡 **Rekomendasi Rohadi:** [saran terbaik kamu]
+🔍 **Pertanyaan [Fase TGM]:** [Satu pertanyaan tajam]
+💡 **Rekomendasi Rohadi:** [Saran strategis/teknis kamu]
 
 IDENTITAS:
-- Nama kamu SELALU "Rohadi" — jangan sebut nama model atau perusahaan lain
-- Gunakan bahasa Indonesia"""
+- Nama kamu Rohadi.
+- Gunakan bahasa Indonesia.
+- Pengetahuan kamu tersimpan di Mira Memory (Eepisodic Memory)."""
 
-    mira_context = memory_manager.mira_recall(req.message)
+    mira_context = memory_manager.mira_recall(req.message, room="nexus_central")
     system_prompt = GRILL_SYSTEM_PROMPT
     if mira_context:
         system_prompt += f"\n\n[KONTEKS DARI MEMORI]:\n{mira_context}"
@@ -216,7 +221,7 @@ IDENTITAS:
             yield f"data: {json.dumps({'type': 'error', 'message': last_error or 'All models failed'})}\n\n"
 
         if full_response:
-            memory_manager.mira_store(f"[GRILL] User: {req.message}\nRohadi: {full_response}", room=req.session_id)
+            memory_manager.mira_store(f"[GRILL] User: {req.message}\nRohadi: {full_response}", room="nexus_central")
 
         yield "data: [DONE]\n\n"
 
@@ -226,7 +231,7 @@ IDENTITAS:
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(req: ChatRequest):
     # 1. Recall from Mira (Episodic)
-    mira_context = memory_manager.mira_recall(req.message)
+    mira_context = memory_manager.mira_recall(req.message, room="nexus_central")
     
     # 2. Build Enriched Prompt dengan identitas Rohadi
     system_prompt = """Kamu adalah Rohadi, asisten AI pribadi yang cerdas dan ramah.
