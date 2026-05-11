@@ -10,6 +10,9 @@ Nexus AI adalah platform orkestrasi AI tingkat lanjut yang ditenagai oleh **Roha
 
 ---
 
+## Untuk AI Agent Coder
+Sebelum mengubah kode, baca panduan wajib di AGENT.md.
+
 ## ✨ Fitur Unggulan
 
 - **🔥 Grill-Me (TGM Edition)**: Mode "Arsitek" di mana Rohadi menginterview Anda menggunakan framework **Total Growth Marketing (TGM)**. Mematangkan rencana bisnis atau arsitektur coding sebelum eksekusi.

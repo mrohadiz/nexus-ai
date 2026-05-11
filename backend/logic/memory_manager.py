@@ -1,56 +1,54 @@
 import os
-# import zvec  # Commented out due to Illegal Instruction on this CPU
-import numpy as np
-import subprocess
+import threading
 import json
 from typing import List, Optional
+from logic import simple_memory
 
 class MemoryManager:
-    def __init__(self, data_path="./data/memory_cache"):
+    def __init__(self, data_path="./data/nexus_memory.db"):
         self.data_path = data_path
-        os.makedirs(os.path.dirname(data_path), exist_ok=True)
-        
-        # Zvec is disabled due to instruction set incompatibility
-        # We will use Postgres + Mira for now.
+        simple_memory.init_db()
 
     def mira_recall(self, query: str, room: str = "general") -> str:
-        """Recall episodic memory using Mira binary"""
+        """
+        Recall episodic memory using Simple Memory (SQLite).
+        Extremely fast, no heavy models.
+        """
         try:
-            # We assume mira binary is in the same directory for now
-            mira_path = "./mira"
-            if not os.path.exists(mira_path):
-                return ""
-                
-            cmd = [mira_path, "recall", query, "--room", room]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-            if result.returncode == 0:
-                return result.stdout.strip()
+            return simple_memory.recall_memory(query, room=room)
         except Exception as e:
-            print(f"Mira recall error: {e}")
-        return ""
+            print(f"[MEMORY] Recall error: {e}")
+            return ""
+
+    def _store_worker(self, content: str, room: str):
+        """Worker thread to handle storage in background"""
+        try:
+            simple_memory.store_memory(content, room=room)
+            print(f"[MEMORY] Successfully stored in room: {room}")
+        except Exception as e:
+            print(f"[MEMORY] Background store error: {e}")
 
     def mira_store(self, content: str, room: str = "general") -> bool:
-        """Store episodic memory using Mira binary"""
+        """
+        Store episodic memory.
+        Executed in a separate thread for maximum responsiveness.
+        """
+        if not content:
+            return False
+            
+        # Clean content if it's a complex JSON string
         try:
-            # Skip storing if content is too long (prevents timeout)
-            if len(content) > 5000:
-                print(f"[MIRA] Skipping store - content too long ({len(content)} chars)")
-                return False
-                
-            mira_path = "./mira"
-            if not os.path.exists(mira_path):
-                return False
-                
-            cmd = [mira_path, "verbatim", content, "--room", room]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-            return result.returncode == 0
-        except Exception as e:
-            print(f"Mira store error: {e}")
-        return False
+            data = json.loads(content)
+            if isinstance(data, dict) and 'content' in data:
+                content = data['content']
+        except:
+            pass
 
-    def store_local(self, content: str, vector: List[float]):
-        """Store transient memory in Zvec"""
-        # Logic to insert into zvec collection
-        pass
+        # Run storage in background thread
+        thread = threading.Thread(target=self._store_worker, args=(content, room))
+        thread.daemon = True
+        thread.start()
+        
+        return True
 
 memory_manager = MemoryManager()

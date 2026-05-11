@@ -3,7 +3,10 @@ import asyncio
 import requests
 import json
 import time
+import httpx
 from typing import Optional, List, Dict, Tuple
+
+from logic.admin_settings import get_active_ai_config, get_provider_headers
 
 # ----- Free model cache (module-level, shared across requests) -----
 _free_models_cache: List[str] = []
@@ -13,29 +16,86 @@ _FREE_MODELS_TTL = 600  # refresh every 10 minutes
 class AIService:
     def __init__(self):
         self.provider = os.getenv("DEFAULT_AI_PROVIDER", "openrouter")
-        
+
         # DuckAI Config
         self.duckai_url = os.getenv("DUCKAI_URL", "http://localhost:3000/v1/chat/completions")
         self.duckai_api_key = os.getenv("DUCKAI_API_KEY", "dummy-key")
-        
+
         # OpenRouter Config
         self.openrouter_url = os.getenv("OPENROUTER_URL", "https://openrouter.ai/api/v1/chat/completions")
         self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "")
 
+        # Alibaba-compatible OpenAI endpoint
+        self.alibaba_url = os.getenv("ALIBABA_AI_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions")
+        self.alibaba_api_key = os.getenv("ALIBABA_AI_KEY", os.getenv("ALIBABA_API_KEY", ""))
+
         # Hardcoded reliable free fallbacks (used if API fetch fails)
         self._default_free_models = [
-            "google/gemini-2.0-flash-001",
-            "google/gemma-3-27b-it:free",
+            "google/gemma-4-31b-it:free",
+            "google/gemma-4-26b-a4b-it:free",
+            "qwen/qwen3-next-80b-a3b-instruct:free",
+            "qwen/qwen3-coder:free",
             "meta-llama/llama-3.1-8b-instruct:free",
-            "mistralai/mistral-7b-instruct:free",
-            "qwen/qwen-2.5-7b-instruct:free",
+            "liquid/lfm-2.5-1.2b-instruct:free",
+            "minimax/minimax-m2.5:free",
+            "z-ai/glm-4.5-air:free",
+            "openrouter/auto-free",
         ]
 
-    def _get_config(self):
-        if self.provider == "openrouter":
-            return self.openrouter_url, self.openrouter_api_key
-        else:
-            return self.duckai_url, self.duckai_api_key
+    def _load_runtime_config(self) -> Dict[str, object]:
+        try:
+            config = get_active_ai_config()
+            if config:
+                return config
+        except Exception as exc:
+            print(f"[AI-CONFIG] Falling back to env config: {exc}")
+
+        return {
+            "provider": self.provider,
+            "base_url": self.openrouter_url if self.provider == "openrouter" else self.alibaba_url,
+            "api_key": self.openrouter_api_key if self.provider == "openrouter" else self.alibaba_api_key,
+            "model": os.getenv("DEFAULT_AI_MODEL", "openrouter/free"),
+            "fallback_models": [],
+            "referer": "https://nexus-ai.local",
+            "title": "Nexus AI",
+            "extra_headers": {},
+            "source": "environment",
+        }
+
+    def _get_config(self, runtime_config: Optional[Dict[str, object]] = None):
+        config = runtime_config or self._load_runtime_config()
+        provider = str(config.get("provider") or self.provider)
+
+        if provider == "openrouter":
+            return (
+                str(config.get("base_url") or self.openrouter_url),
+                str(config.get("api_key") or self.openrouter_api_key),
+                provider,
+                get_provider_headers(config),
+            )
+
+        if provider == "alibaba":
+            return (
+                str(config.get("base_url") or self.alibaba_url),
+                str(config.get("api_key") or self.alibaba_api_key),
+                provider,
+                get_provider_headers(config),
+            )
+
+        if provider == "duckai":
+            return (
+                str(config.get("base_url") or self.duckai_url),
+                str(config.get("api_key") or self.duckai_api_key),
+                provider,
+                get_provider_headers(config),
+            )
+
+        return (
+            str(config.get("base_url") or self.openrouter_url),
+            str(config.get("api_key") or self.openrouter_api_key),
+            provider,
+            get_provider_headers(config),
+        )
 
     def fetch_free_models(self) -> List[str]:
         """Fetch & cache the list of free models from OpenRouter API.
@@ -44,15 +104,22 @@ class AIService:
         """
         global _free_models_cache, _free_models_fetched_at
 
+        runtime_config = self._load_runtime_config()
+        provider = str(runtime_config.get("provider") or self.provider)
+        api_key = str(runtime_config.get("api_key") or self.openrouter_api_key)
+
         now = time.time()
         if _free_models_cache and (now - _free_models_fetched_at) < _FREE_MODELS_TTL:
             return _free_models_cache
+
+        if provider != "openrouter":
+            return self._default_free_models
 
         try:
             print("[FREE-ROUTER] Fetching free models from OpenRouter API...")
             resp = requests.get(
                 "https://openrouter.ai/api/v1/models",
-                headers={"Authorization": f"Bearer {self.openrouter_api_key}"},
+                headers={"Authorization": f"Bearer {api_key}"},
                 timeout=10
             )
             if resp.status_code == 200:
@@ -90,32 +157,32 @@ class AIService:
         return await asyncio.to_thread(self.fetch_free_models)
 
     def get_fallback_chain(self, primary_model: str) -> List[str]:
-        """Build fallback chain: [primary] + free_models (excluding primary)."""
-        free = self.fetch_free_models()
-        chain = [primary_model] + [m for m in free if m != primary_model]
-        return chain
+        """Build fallback chain based on configured provider and fallback models."""
+        config = self._load_runtime_config()
+        fallback_models = config.get("fallback_models") or []
+
+        if isinstance(fallback_models, list) and fallback_models:
+            chain = [primary_model] + [model for model in fallback_models if model != primary_model]
+            return chain
+
+        if str(config.get("provider") or self.provider) == "openrouter":
+            free = self.fetch_free_models()
+            return [primary_model] + [m for m in free if m != primary_model]
+
+        return [primary_model]
 
 
     async def call_ai_stream(self, prompt: str, history: List = [], system_prompt: str = "You are Nexus AI, a helpful personal assistant.", model: str = "openrouter/free", tools: Optional[List[Dict]] = None, tool_choice: Optional[str] = "auto", images: Optional[List[str]] = None):
-        import httpx
+        runtime_config = self._load_runtime_config()
+        url, api_key, provider, headers = self._get_config(runtime_config)
         
-        url, api_key = self._get_config()
-        
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
-        }
-        
-        # If OpenRouter, add required headers
-        if self.provider == "openrouter":
-            headers["HTTP-Referer"] = "https://nexus-ai.local" # Required by OpenRouter
-            headers["X-Title"] = "Nexus AI"
+        headers["Authorization"] = f"Bearer {api_key}"
         
         # Build messages
         messages = []
         
         # System prompt handling
-        if self.provider == "duckai":
+        if provider == "duckai":
             # DuckAI often dislikes 'system' role, so we merge it
             if history:
                 for i, msg in enumerate(history):
@@ -133,9 +200,22 @@ class AIService:
             # OpenRouter / Standard OpenAI-like
             messages.append({"role": "system", "content": system_prompt})
             for msg in history:
-                role = msg.role if hasattr(msg, 'role') else msg.get('role')
-                content = msg.content if hasattr(msg, 'content') else msg.get('content')
+                role = msg.role if hasattr(msg, 'role') else msg.get('role', 'user')
+                content = msg.content if hasattr(msg, 'content') else msg.get('content', '')
                 item = {"role": role, "content": content}
+                
+                # Support tool calls in history
+                if hasattr(msg, 'tool_calls'):
+                    item["tool_calls"] = getattr(msg, 'tool_calls')
+                elif isinstance(msg, dict) and "tool_calls" in msg:
+                    item["tool_calls"] = msg["tool_calls"]
+                
+                # Support tool result (role: tool)
+                if role == "tool":
+                    if hasattr(msg, 'tool_call_id'):
+                        item["tool_call_id"] = getattr(msg, 'tool_call_id')
+                    elif isinstance(msg, dict) and "tool_call_id" in msg:
+                        item["tool_call_id"] = msg["tool_call_id"]
                 
                 # Support reasoning_details if present
                 if hasattr(msg, 'reasoning_details'):
@@ -170,22 +250,47 @@ class AIService:
             payload["tools"] = tools
             payload["tool_choice"] = tool_choice
             
-        # Enable reasoning for OpenRouter free models if requested or by default
-        if self.provider == "openrouter":
-            payload["reasoning"] = {"enabled": True}
-        
         max_retries = 2
         for attempt in range(max_retries):
             try:
-                print(f"[STREAM] {self.provider.upper()} Attempt {attempt + 1}/{max_retries} for model: {model}")
+                print(f"[STREAM] {provider.upper()} Attempt {attempt + 1}/{max_retries} for model: {model}")
                 async with httpx.AsyncClient(timeout=180.0) as client:
                     async with client.stream("POST", url, json=payload, headers=headers) as response:
+                        if response.status_code == 400 and tools:
+                            # If 400 error and we used tools, try again WITHOUT tools
+                            print(f"[STREAM ERROR] Model {model} returned 400. Retrying WITHOUT tools...")
+                            temp_payload = payload.copy()
+                            del temp_payload["tools"]
+                            if "tool_choice" in temp_payload:
+                                del temp_payload["tool_choice"]
+                            
+                            async with client.stream("POST", url, json=temp_payload, headers=headers) as retry_resp:
+                                if retry_resp.status_code == 200:
+                                    async for line in retry_resp.aiter_lines():
+                                        if line.startswith("data: "):
+                                            data_str = line[6:].strip()
+                                            if data_str == "[DONE]": return
+                                            try:
+                                                data = json.loads(data_str)
+                                                chunk = data["choices"][0].get("delta", {}).get("content", "")
+                                                if chunk: yield chunk
+                                            except: continue
+                                    return
+                                else:
+                                    resp_text = await retry_resp.aread()
+                                    print(f"[STREAM ERROR] Retry without tools failed: {retry_resp.status_code} - {resp_text.decode()}")
+
                         if response.status_code != 200:
                             resp_text = await response.aread()
                             error_msg = f"Error: {response.status_code} - {resp_text.decode()}"
                             print(f"[STREAM ERROR] {error_msg}")
                             
-                            detailed_error = f"AI Provider ({self.provider}) returned {response.status_code}. Try again or switch model."
+                            # For rate limit (429) and server errors (5xx), raise exception to trigger fallback
+                            if response.status_code in (429, 500, 502, 503, 504):
+                                raise Exception(f"Model {model} returned {response.status_code}: {error_msg}")
+                            
+                            # For other errors, yield error to frontend
+                            detailed_error = f"AI Provider ({provider}) returned {response.status_code}. Try again or switch model."
                             yield f"data: {json.dumps({'type': 'error', 'message': detailed_error})}\n\n"
                             return
                         
@@ -223,19 +328,13 @@ class AIService:
                     return
 
     def call_ai(self, prompt: str, history: List = [], system_prompt: str = "You are Nexus AI, a helpful personal assistant.", model: str = "google/gemma-3-27b-it:free", tools: Optional[List[Dict]] = None, tool_choice: Optional[str] = "auto", images: Optional[List[str]] = None) -> Optional[str]:
-        url, api_key = self._get_config()
+        runtime_config = self._load_runtime_config()
+        url, api_key, provider, headers = self._get_config(runtime_config)
         
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
-        }
-        
-        if self.provider == "openrouter":
-            headers["HTTP-Referer"] = "https://nexus-ai.local"
-            headers["X-Title"] = "Nexus AI"
+        headers["Authorization"] = f"Bearer {api_key}"
             
         messages = []
-        if self.provider == "duckai":
+        if provider == "duckai":
             if history:
                 for i, msg in enumerate(history):
                     role = msg.role if hasattr(msg, 'role') else msg.get('role')
@@ -250,9 +349,22 @@ class AIService:
         else:
             messages.append({"role": "system", "content": system_prompt})
             for msg in history:
-                role = msg.role if hasattr(msg, 'role') else msg.get('role')
-                content = msg.content if hasattr(msg, 'content') else msg.get('content')
+                role = msg.role if hasattr(msg, 'role') else msg.get('role', 'user')
+                content = msg.content if hasattr(msg, 'content') else msg.get('content', '')
                 item = {"role": role, "content": content}
+                
+                # Support tool calls in history
+                if hasattr(msg, 'tool_calls'):
+                    item["tool_calls"] = getattr(msg, 'tool_calls')
+                elif isinstance(msg, dict) and "tool_calls" in msg:
+                    item["tool_calls"] = msg["tool_calls"]
+                
+                # Support tool result (role: tool)
+                if role == "tool":
+                    if hasattr(msg, 'tool_call_id'):
+                        item["tool_call_id"] = getattr(msg, 'tool_call_id')
+                    elif isinstance(msg, dict) and "tool_call_id" in msg:
+                        item["tool_call_id"] = msg["tool_call_id"]
                 
                 # Support reasoning_details if present
                 if hasattr(msg, 'reasoning_details'):
@@ -292,9 +404,9 @@ class AIService:
                     return json.dumps({'tool_calls': message['tool_calls']})
                 return message['content'].strip()
             else:
-                print(f"{self.provider} Error: {response.status_code} - {response.text}")
+                print(f"{provider} Error: {response.status_code} - {response.text}")
         except Exception as e:
-            print(f"{self.provider} Call Failed: {e}")
+            print(f"{provider} Call Failed: {e}")
         
         return None
 
